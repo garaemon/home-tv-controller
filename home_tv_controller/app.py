@@ -7,6 +7,7 @@ import logging
 
 import pylgtv
 import paho.mqtt.client as mqtt
+import pychromecast
 
 logger = logging.getLogger()
 
@@ -16,11 +17,11 @@ class App(object):
     CLOUD_MQTT_URL_ENV = 'CLOUDMQTT_URL'
     LOGGLY_TOKEN_ENV = 'LOGGLY_TOKEN'
 
+    DUMMY_MEDIA_URL_FOR_CHROMECAST = 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+    DUMMY_MEDIA_TYPE_FOR_CHROMECAST = 'video/mp4'
+
     def __init__(self):
         self.verify_environmental_variables()
-        ip = App.find_tvs()[0]
-        self.client = pylgtv.WebOsClient(ip)
-        self.client.client_key = os.environ[self.LGTV_CLIENT_KEY_ENV]
 
     def verify_environmental_variables(self):
         envs = [self.LGTV_CLIENT_KEY_ENV, self.CLOUD_MQTT_URL_ENV,
@@ -54,31 +55,64 @@ class App(object):
         logger.info('Connected to MQTT Broker')
         self.setup_mqtt_subscribers()
 
+    def connect_tv(self):
+        ip = App.find_tvs()[0]
+        client = pylgtv.WebOsClient(ip)
+        client.client_key = os.environ[self.LGTV_CLIENT_KEY_ENV]
+        return client
+
     def on_message(self, client, userdata, message):
         topic = message.topic
+        logging.info('Received message for %s' % topic)
+
         if topic == 'tv/turn_on':
-            self.client.power_on()
-        elif topic == 'tv/turn_off':
-            self.client.power_off()
-        elif topic == 'tv/volume_up':
-            self.client.volume_up()
-        elif topic == 'tv/volume_down':
-            self.client.volume_down()
-        elif topic == 'tv/channel_up':
-            self.client.channel_up()
-        elif topic == 'tv/channel_down':
-            self.client.channel_down()
+            self.turn_on_tv()
         else:
-            raise Exception('Unsupported topic: %s' % topic)
+            client = self.connect_tv()
+            if topic == 'tv/turn_off':
+                client.power_off()
+            elif topic == 'tv/volume_up':
+                client.volume_up()
+            elif topic == 'tv/volume_down':
+                client.volume_down()
+            elif topic == 'tv/channel_up':
+                client.channel_up()
+            elif topic == 'tv/channel_down':
+                client.channel_down()
+            else:
+                raise Exception('Unsupported topic: %s' % topic)
+
+    def is_tv_online(self):
+        return len(App.find_tvs()) != 0
+
+    def turn_on_tv(self):
+        if self.is_tv_online():
+            logger.info('TV is online')
+            return
+        else:
+            logger.info('No tv is online')
+            # Play dummy music to turn on PC via chromecast
+            casts = pychromecast.get_chromecasts()
+            for cast in casts:
+                # TODO: should use UUID?
+                if cast.model_name != 'Chromecast':
+                    continue
+                cast.wait()
+                cast.quit_app()
+                mc = cast.media_controller
+                logging.info('Playing')
+                mc.stop()
+                mc.play_media(self.DUMMY_MEDIA_URL_FOR_CHROMECAST,
+                              self.DUMMY_MEDIA_TYPE_FOR_CHROMECAST)
+                mc.block_until_active()
+                mc.stop()
+                cast.quit_app()
+                cast.disconnect()
+                return
+
 
     def run_forever(self):
-        self.mqtt_client.loop_forever()
-
-    def power_off(self):
-        self.client.power_off()
-
-    def power_on(self):
-        self.client.power_on()
+        self.mqtt_client.loop_forever(retry_first_connection=True)
 
     # originally from https://github.com/grieve/python-lgtv/blob/master/lg.py
     @classmethod
@@ -132,4 +166,4 @@ class App(object):
 
 if __name__ == '__main__':
     app = App()
-    app.power_off()
+    app.turn_on_tv()

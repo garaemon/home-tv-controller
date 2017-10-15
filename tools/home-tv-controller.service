@@ -1,0 +1,14 @@
+[Unit]
+Description=home-tv-controller service
+
+[Service]
+Type=simple
+Restart=always
+# EnvironmentFile=@PROJECT_DIR@/setup.sh
+# After=network.target
+ExecStart=/bin/bash @PROJECT_DIR@/tools/run.sh
+
+# Install section is required for autorun
+# Please enable linger by `sudo loginctl enable-linger ${USER}`
+[Install]
+WantedBy=default.target

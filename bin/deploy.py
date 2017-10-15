@@ -51,13 +51,42 @@ def build_code(hostname, target_directory):
                            concatenate_shell_commands(commands)])
 
 
+def copy_environmental_variables(hostname, target_directory):
+    envs = ['LOGGLY_TOKEN', 'LGTV_CLIENT_KEY', 'CLOUDMQTT_URL']
+    content = ';'.join(['export %s=%s'
+                        % (env, os.environ[env]) for env in envs])
+    commands = ['cd %s' % target_directory,
+                'echo "%s" > setup.sh' % content]
+    subprocess.check_call(['ssh', hostname,
+                           concatenate_shell_commands(commands)])
+
+
+def setup_systemd(hostname, target_directory):
+    service_file = 'tools/home-tv-controller.service'
+    sed_command = 'sed -e s+@PROJECT_DIR@+${PWD}+g -i %s' % (service_file)
+    commands = [
+        'cd %s' % target_directory,
+        sed_command,
+        'mkdir -p ${HOME}/.config/systemd/user/',
+        # Be careful, symbolic link of .service file does not work.
+        'cp ${PWD}/%s ${HOME}/.config/systemd/user/' % service_file,
+        'systemctl --user daemon-reload',
+        'systemctl --user enable home-tv-controller',
+        'systemctl --user restart home-tv-controller']
+    print(concatenate_shell_commands(commands))
+    subprocess.check_call(['ssh', hostname,
+                           concatenate_shell_commands(commands)])
+
+
 def main(hostname, target_directory):
     print('> Start deploying to %s' % hostname)
     install_pyenv(hostname)
     install_python(hostname)
     deploy_source_code(hostname, target_directory)
     build_code(hostname, target_directory)
-
+    copy_environmental_variables(hostname, target_directory)
+    setup_systemd(hostname, target_directory)
+    print('Please run `sudo loginctl enable-linger ${USER}` to enable auto start')
 
 if __name__ == '__main__':
     fire.Fire(main)
