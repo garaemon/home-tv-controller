@@ -88,7 +88,9 @@ class App(object):
     def turn_on_tv(self):
         if self.is_tv_online():
             logger.info('TV is online')
-            return
+            client = self.connect_tv()
+            # Force to change input to TV
+            client.launch_app('com.webos.app.livetv')
         else:
             logger.info('No tv is online')
             # Play dummy music to turn on PC via chromecast
@@ -166,4 +168,9 @@ class App(object):
 
 if __name__ == '__main__':
     app = App()
-    app.turn_on_tv()
+    # app.turn_on_tv()
+    client = app.connect_tv()
+    apps = client.get_apps()
+    for app in apps:
+        print(app['id'])
+    # print(client.get_apps())
